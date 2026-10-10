@@ -60,7 +60,7 @@ main { max-width: 1200px; margin: 0 auto; padding: 20px 16px 60px; }
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow); margin-bottom: 16px; }
 .card-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
 .card-head h2 { margin: 0; }
-.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-bottom: 0; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 0 16px; margin-bottom: 0; }
 .grid .card { margin-bottom: 16px; }
 .kv { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin-bottom: 14px; }
 .kv > span:nth-child(odd) { color: var(--muted); }
@@ -76,7 +76,7 @@ main { max-width: 1200px; margin: 0 auto; padding: 20px 16px 60px; }
 .btn.ghost { border-color: transparent; background: transparent; }
 .btn.sm { padding: 3px 9px; font-size: 12.5px; }
 
-.pill { padding: 3px 10px; border-radius: 999px; font-size: 12.5px; background: var(--surface-2); color: var(--muted); }
+.pill { white-space: nowrap; display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12.5px; background: var(--surface-2); color: var(--muted); }
 .pill.ok { background: var(--ok-bg); color: var(--ok); }
 .pill.warn { background: var(--warn-bg); color: var(--warn); }
 .pill.bad { background: var(--danger-bg); color: var(--danger); }

@@ -382,25 +382,38 @@ func (f *Firewall) Cleanup(ctx context.Context, settings Ruleset) error {
 	return f.Apply(ctx, Ruleset{Mark: settings.Mark, Table: settings.Table, Priority: settings.Priority})
 }
 
-// CleanupAll 在 legacy 和 nft 两套 iptables 上都执行清理，用于卸载和手动恢复。
+// CleanupAll 在 legacy 和 nft 两套 iptables 中凡是含有 egp 规则的都执行清理，用于卸载和手动恢复。
+// 不含 egp 规则的那套不去触碰，避免在纯 nft 系统上初始化 legacy 表（会导致 iptables-save 告警）。
 func CleanupAll(ctx context.Context, r Runner, log *slog.Logger, base Ruleset) error {
-	var backends []Backend
-	for _, name := range []string{"nft", "legacy"} {
-		if lookPath("iptables-"+name) != "" {
-			backends = append(backends, backendFor(name))
-		}
-	}
-	if len(backends) == 0 {
-		backends = append(backends, backendFor("nft"))
-	}
 	var errs []error
-	for _, b := range backends {
-		if b.IPT == "" || b.IPTRest == "" {
+	cleaned := false
+	for _, name := range []string{"nft", "legacy"} {
+		if lookPath("iptables-"+name) == "" {
 			continue
 		}
+		has := false
+		for _, save := range []string{"iptables-" + name + "-save", "ip6tables-" + name + "-save"} {
+			if p := lookPath(save); p != "" {
+				if out, err := r.Run(ctx, "", p); err == nil && strings.Contains(out, "EGP") {
+					has = true
+				}
+			}
+		}
+		if !has {
+			continue
+		}
+		b := backendFor(name)
 		f := &Firewall{R: r, B: b, Log: log, HasIPv6: b.IP6T != "" && b.IP6TRest != ""}
 		if err := f.Cleanup(ctx, base); err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", b.Name, err))
+		}
+		cleaned = true
+	}
+	if !cleaned {
+		// 没有 egp 的 iptables 规则时仍要清理可能残留的策略路由。
+		f := &Firewall{R: r, Log: log}
+		if err := f.applyPolicyRoute(ctx, Ruleset{Mark: base.Mark, Table: base.Table, Priority: base.Priority}); err != nil {
+			errs = append(errs, err)
 		}
 	}
 	return errors.Join(errs...)

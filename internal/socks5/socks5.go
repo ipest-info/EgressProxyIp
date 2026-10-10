@@ -297,7 +297,10 @@ func (c *Client) AssociateUDP(ctx context.Context, strict bool) (*UDPSession, er
 	if ta, ok := conn.RemoteAddr().(*net.TCPAddr); ok {
 		serverIP = ta.AddrPort().Addr().Unmap()
 	}
-	unusable := ra.IsUnspecified() || ra.IsLoopback() || (ra.IsPrivate() && serverIP.IsValid() && !serverIP.IsPrivate())
+	// 未指定地址一定不可用；服务器是公网地址却报告回环/私网地址，说明代理在 NAT 后面且配置有误。
+	unusable := ra.IsUnspecified() ||
+		(ra.IsLoopback() && serverIP.IsValid() && !serverIP.IsLoopback()) ||
+		(ra.IsPrivate() && serverIP.IsValid() && !serverIP.IsPrivate() && !serverIP.IsLoopback())
 	if perr == nil && unusable && serverIP.IsValid() {
 		if strict {
 			conn.Close()

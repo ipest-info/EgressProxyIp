@@ -187,13 +187,20 @@ func Install(o Options) error {
 	if err != nil {
 		return err
 	}
-	if err := run("systemctl", "daemon-reload"); err != nil {
-		return err
+	// 容器等没有以 systemd 启动的环境中无法注册服务，只完成文件安装。
+	systemdUp := true
+	if _, err := os.Stat("/run/systemd/system"); err != nil {
+		systemdUp = false
+		o.printf("⚠ 当前系统未以 systemd 运行（例如容器内），已跳过服务注册；可手动运行：%s serve -dir %s\n", BinPath, ConfigDir)
+	} else {
+		if err := run("systemctl", "daemon-reload"); err != nil {
+			return err
+		}
+		if err := run("systemctl", "enable", Service, GuardUnit); err != nil {
+			return err
+		}
 	}
-	if err := run("systemctl", "enable", Service, GuardUnit); err != nil {
-		return err
-	}
-	if !o.NoStart {
+	if !o.NoStart && systemdUp {
 		o.printf("· 启动服务\n")
 		if err := run("systemctl", "restart", Service); err != nil {
 			return err
