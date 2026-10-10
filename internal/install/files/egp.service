@@ -1,0 +1,21 @@
+[Unit]
+Description=ECS 出口代理 egp（使用代理 IP 作为本机出网 IP）
+Documentation=https://github.com/ipest-info/EgressProxyIp
+After=network-online.target egp-guard.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/egp serve -dir /etc/egp
+# 进程异常退出后清理规则；开启 kill switch 时保留规则（断网而不是泄露真实 IP）。
+ExecStopPost=/usr/local/bin/egp cleanup -dir /etc/egp -respect-killswitch
+Restart=on-failure
+RestartSec=3
+KillMode=control-group
+TimeoutStopSec=20
+LimitNOFILE=1048576
+RuntimeDirectory=egp
+RuntimeDirectoryMode=0700
+
+[Install]
+WantedBy=multi-user.target

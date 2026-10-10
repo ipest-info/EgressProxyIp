@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ECS 出口代理</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="login" class="login hidden">
+  <form id="login-form" class="card login-card">
+    <h1>ECS 出口代理</h1>
+    <p class="muted">使用代理 IP 作为本机访问互联网的出口</p>
+    <label>用户名<input name="username" autocomplete="username" value="admin" required></label>
+    <label>密码<input name="password" type="password" autocomplete="current-password" required></label>
+    <button class="btn primary" type="submit">登录</button>
+    <p class="muted small">初始密码见服务器上的 <code>/etc/egp/initial-password</code></p>
+    <p id="login-error" class="error"></p>
+  </form>
+</div>
+
+<div id="app" class="hidden">
+  <header class="topbar">
+    <div class="brand">ECS 出口代理</div>
+    <div id="top-status" class="pill">加载中…</div>
+    <div class="spacer"></div>
+    <span id="dirty-hint" class="dirty hidden">有未应用的更改</span>
+    <button id="btn-apply" class="btn primary">应用更改</button>
+    <button id="btn-logout" class="btn ghost">退出</button>
+  </header>
+  <nav class="tabs" id="tabs">
+    <a href="#dashboard" data-tab="dashboard">仪表盘</a>
+    <a href="#proxies" data-tab="proxies">代理</a>
+    <a href="#policy" data-tab="policy">出口策略</a>
+    <a href="#bypass" data-tab="bypass">绕过规则</a>
+    <a href="#logs" data-tab="logs">日志</a>
+    <a href="#settings" data-tab="settings">设置</a>
+  </nav>
+  <main>
+    <section id="tab-dashboard" class="tab">
+      <div id="banner"></div>
+      <div class="grid">
+        <div class="card">
+          <h2>出口状态</h2>
+          <div class="kv">
+            <span>出口代理</span><strong id="d-enabled">-</strong>
+            <span>当前出口节点</span><strong id="d-current">-</strong>
+            <span>模式</span><span id="d-mode">-</span>
+            <span>Kill switch</span><span id="d-ks">-</span>
+            <span>UDP</span><span id="d-udp">-</span>
+            <span>最近应用</span><span id="d-applied">-</span>
+          </div>
+          <div class="row">
+            <button id="btn-enable" class="btn primary">启用出口代理</button>
+            <button id="btn-disable" class="btn danger">停用（恢复直连）</button>
+          </div>
+        </div>
+        <div class="card">
+          <h2>出口 IP</h2>
+          <div class="ipbox">
+            <div><div class="muted small">ECS 自身公网 IP</div><div id="d-ecsip" class="ip">-</div></div>
+            <div class="arrow">→</div>
+            <div><div class="muted small">当前实际出口 IP</div><div id="d-realip" class="ip">-</div></div>
+          </div>
+          <p id="d-verify" class="muted small"></p>
+          <button id="btn-check" class="btn">立即检测出口</button>
+        </div>
+        <div class="card">
+          <h2>运行状态</h2>
+          <div class="kv">
+            <span>gost 引擎</span><span id="d-engine">-</span>
+            <span>防火墙</span><span id="d-fw">-</span>
+            <span>连接跟踪</span><span id="d-ct">-</span>
+            <span>经代理流量</span><span id="d-traffic">-</span>
+            <span>活动连接</span><span id="d-inflight">-</span>
+            <span>实例</span><span id="d-ecs">-</span>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>代理健康</h2>
+        <table class="table" id="health-table"><thead><tr><th>代理</th><th>状态</th><th>延迟</th><th>最近检查</th><th>错误</th></tr></thead><tbody></tbody></table>
+      </div>
+    </section>
+
+    <section id="tab-proxies" class="tab hidden">
+      <div class="card">
+        <div class="card-head">
+          <h2>上游 SOCKS5 代理</h2>
+          <div class="row">
+            <button id="btn-add-proxy" class="btn primary">添加代理</button>
+            <button id="btn-import" class="btn">批量导入</button>
+          </div>
+        </div>
+        <p class="muted small">列表顺序即主备优先级。修改后需点击右上角“应用更改”才会生效。</p>
+        <div class="table-wrap">
+          <table class="table" id="proxy-table">
+            <thead><tr><th>优先级</th><th>名称</th><th>地址</th><th>认证</th><th>UDP</th><th>最近测试</th><th>启用</th><th>操作</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p id="proxy-empty" class="muted hidden">还没有代理，点击“添加代理”或“批量导入”。</p>
+      </div>
+    </section>
+
+    <section id="tab-policy" class="tab hidden">
+      <form id="policy-form" class="card form">
+        <h2>出口策略</h2>
+        <fieldset>
+          <legend>出口模式</legend>
+          <label class="radio"><input type="radio" name="mode" value="failover"> 主备：按优先级使用第一个健康的代理，故障自动切换</label>
+          <label class="radio"><input type="radio" name="mode" value="fixed"> 固定：始终使用指定代理</label>
+          <label id="active-wrap">固定使用的代理<select name="activeProxyId"></select></label>
+          <label class="check"><input type="checkbox" name="failback"> 高优先级代理恢复后自动切回（关闭则保持当前出口 IP 不变）</label>
+        </fieldset>
+        <fieldset>
+          <legend>防泄露</legend>
+          <label class="check"><input type="checkbox" name="killSwitch"> Kill switch：代理全部不可用时阻断出网，绝不回落到 ECS 自身 IP</label>
+          <label class="check"><input type="checkbox" name="blockIpv6"> 阻断 IPv6 出网（egp 只代理 IPv4，防止经 IPv6 暴露真实地址）</label>
+          <label>UDP 处理
+            <select name="udpMode">
+              <option value="proxy">经代理转发（需要代理支持 UDP ASSOCIATE）</option>
+              <option value="direct">直连（UDP 会暴露 ECS 自身 IP）</option>
+              <option value="block">阻断（QUIC 等会自动回退到 TCP）</option>
+            </select>
+          </label>
+        </fieldset>
+        <fieldset>
+          <legend>健康检查</legend>
+          <div class="cols">
+            <label>检查间隔（秒）<input type="number" name="healthIntervalSec" min="5" max="3600"></label>
+            <label>连续失败几次判定故障<input type="number" name="failThreshold" min="1" max="100"></label>
+            <label>连续成功几次判定恢复<input type="number" name="recoverThreshold" min="1" max="100"></label>
+          </div>
+        </fieldset>
+        <div class="row"><button class="btn primary" type="submit">保存</button><span class="muted small">保存后点击“应用更改”生效</span></div>
+        <p class="error" data-error></p>
+      </form>
+    </section>
+
+    <section id="tab-bypass" class="tab hidden">
+      <form id="bypass-form" class="card form">
+        <h2>绕过规则</h2>
+        <p class="muted small">命中以下规则的流量继续使用 ECS 自身 IP 直连。</p>
+        <div class="cols2">
+          <label>目标网段（每行一个，如 1.2.3.0/24）<textarea name="cidrs" rows="6"></textarea></label>
+          <label>域名后缀（每行一个，如 aliyuncs.com，基于 TLS SNI / HTTP Host 匹配）<textarea name="domains" rows="6"></textarea></label>
+        </div>
+        <div class="cols">
+          <label>TCP 目标端口（逗号分隔）<input name="tcpPorts" placeholder="如 25,465"></label>
+          <label>UDP 目标端口（逗号分隔）<input name="udpPorts" placeholder="默认 123（NTP）"></label>
+          <label>本机管理端口（回包永不拦截）<input name="mgmtPorts" placeholder="默认 22"></label>
+        </div>
+        <label>直连用户组<input name="directGroup" placeholder="egp-direct"></label>
+        <p class="muted small">以该用户组运行的程序不走代理，例如：<code>sg egp-direct -c "curl ifconfig.me"</code></p>
+        <div class="row"><button class="btn primary" type="submit">保存</button></div>
+        <p class="error" data-error></p>
+        <h3>内置与自动探测的绕过网段（只读）</h3>
+        <p class="muted small">本机、私网、阿里云内网服务（元数据 100.100.100.200、内网 DNS、内网镜像源）、直连子网、系统 DNS 服务器。</p>
+        <div id="builtin-bypass" class="chips"></div>
+      </form>
+    </section>
+
+    <section id="tab-logs" class="tab hidden">
+      <div class="card">
+        <div class="card-head"><h2>操作与事件</h2><button id="btn-refresh-logs" class="btn">刷新</button></div>
+        <div class="table-wrap"><table class="table" id="audit-table"><thead><tr><th>时间</th><th>来源</th><th>事件</th><th>详情</th></tr></thead><tbody></tbody></table></div>
+      </div>
+      <div class="card">
+        <h2>gost 日志</h2>
+        <pre id="engine-log" class="log"></pre>
+      </div>
+    </section>
+
+    <section id="tab-settings" class="tab hidden">
+      <form id="settings-form" class="card form">
+        <h2>设置</h2>
+        <div class="cols">
+          <label>WebUI 监听地址（重启服务后生效）<input name="listen"></label>
+          <label>gost 可执行文件<input name="gostBin"></label>
+        </div>
+        <div class="cols">
+          <label>TCP 重定向端口<input type="number" name="redirPort"></label>
+          <label>UDP 透明代理端口<input type="number" name="tproxyPort"></label>
+          <label>gost API 端口<input type="number" name="apiPort"></label>
+          <label>gost 指标端口<input type="number" name="metricsPort"></label>
+        </div>
+        <label>健康检查 URL<input name="healthUrl"></label>
+        <label>IP 回显服务（每行一个）<textarea name="echoUrls" rows="3"></textarea></label>
+        <label>STUN 服务器（测试 UDP）<input name="stunServer"></label>
+        <div class="row"><button class="btn primary" type="submit">保存</button></div>
+        <p class="error" data-error></p>
+      </form>
+      <form id="password-form" class="card form">
+        <h2>修改管理员密码</h2>
+        <div class="cols">
+          <label>原密码<input type="password" name="old" autocomplete="current-password" required></label>
+          <label>新密码（至少 8 位）<input type="password" name="new" autocomplete="new-password" required minlength="8"></label>
+        </div>
+        <div class="row"><button class="btn primary" type="submit">修改密码</button></div>
+        <p class="error" data-error></p>
+      </form>
+      <div class="card">
+        <div class="card-head"><h2>配置预览</h2><button id="btn-preview" class="btn">刷新预览</button></div>
+        <p class="muted small">根据当前编辑中的配置生成（未必已生效）。iptables 后端：<span id="pv-backend">-</span></p>
+        <h3>防火墙规则</h3><pre id="pv-rules" class="log"></pre>
+        <h3>gost 配置（已隐藏密码）</h3><pre id="pv-gost" class="log"></pre>
+        <div id="pv-dry" class="hidden"><h3>演示模式下记录的命令</h3><pre id="pv-drylog" class="log"></pre></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<dialog id="dlg-proxy">
+  <form method="dialog" id="proxy-form" class="form">
+    <h2 id="proxy-dlg-title">添加代理</h2>
+    <label>名称<input name="name" placeholder="可选"></label>
+    <div class="cols2">
+      <label>地址（IP 或域名）<input name="host" required></label>
+      <label>端口<input name="port" type="number" min="1" max="65535" required></label>
+    </div>
+    <div class="cols2">
+      <label>用户名<input name="username" autocomplete="off"></label>
+      <label>密码<input name="password" type="password" autocomplete="new-password" placeholder=""></label>
+    </div>
+    <label class="check"><input type="checkbox" name="enabled" checked> 启用</label>
+    <p class="error" data-error></p>
+    <div class="row end"><button class="btn ghost" value="cancel" formnovalidate>取消</button><button class="btn primary" value="ok">保存</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlg-import">
+  <form method="dialog" id="import-form" class="form">
+    <h2>批量导入</h2>
+    <p class="muted small">每行一个，支持：<code>socks5://user:pass@host:port#名称</code>、<code>host:port:user:pass</code>、<code>user:pass@host:port</code>、<code>host:port</code></p>
+    <textarea name="text" rows="10" placeholder="socks5://user:pass@203.0.113.10:1080#香港-1"></textarea>
+    <p class="error" data-error></p>
+    <div class="row end"><button class="btn ghost" value="cancel" formnovalidate>取消</button><button class="btn primary" value="ok">导入</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlg-confirm">
+  <div class="form">
+    <h2>确认新的出口配置</h2>
+    <p id="confirm-msg"></p>
+    <p class="countdown">倒计时 <strong id="confirm-left">60</strong> 秒，未确认将自动回滚到上一次的配置。</p>
+    <div class="row end"><button id="btn-revert" class="btn danger">立即回滚</button><button id="btn-confirm" class="btn primary">确认保留</button></div>
+  </div>
+</dialog>
+
+<dialog id="dlg-test">
+  <div class="form">
+    <h2>代理测试结果</h2>
+    <div id="test-result" class="kv"></div>
+    <div class="row end"><button class="btn primary" id="btn-test-close">关闭</button></div>
+  </div>
+</dialog>
+
+<div id="toast" class="toast hidden"></div>
+<script src="app.js"></script>
+</body>
+</html>

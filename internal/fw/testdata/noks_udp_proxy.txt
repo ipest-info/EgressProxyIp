@@ -1,0 +1,45 @@
+# ---- IPv4 ----
+iptables -t nat -N EGP_TCP_OUT
+iptables -t nat -A EGP_TCP_OUT -m mark --mark 0x2000000/0x2000000 -j RETURN
+iptables -t nat -A EGP_TCP_OUT -m mark --mark 0x1000000/0x1000000 -j RETURN
+iptables -t nat -A EGP_TCP_OUT -m mark --mark 0x8000000/0x8000000 -j RETURN
+iptables -t nat -A EGP_TCP_OUT -m addrtype --dst-type LOCAL -j RETURN
+iptables -t nat -A EGP_TCP_OUT -d 0.0.0.0/8 -j RETURN
+iptables -t nat -A EGP_TCP_OUT -d 8.8.8.8/32 -j RETURN
+iptables -t nat -A EGP_TCP_OUT -d 10.0.0.0/8 -j RETURN
+iptables -t nat -A EGP_TCP_OUT -d 100.64.0.0/10 -j RETURN
+iptables -t nat -A EGP_TCP_OUT -d 127.0.0.0/8 -j RETURN
+iptables -t nat -A EGP_TCP_OUT -d 169.254.0.0/16 -j RETURN
+iptables -t nat -A EGP_TCP_OUT -d 172.16.0.0/12 -j RETURN
+iptables -t nat -A EGP_TCP_OUT -d 192.168.0.0/16 -j RETURN
+iptables -t nat -A EGP_TCP_OUT -d 224.0.0.0/4 -j RETURN
+iptables -t nat -A EGP_TCP_OUT -d 240.0.0.0/4 -j RETURN
+iptables -t nat -A EGP_TCP_OUT -m owner --gid-owner egp-direct -j RETURN
+iptables -t nat -A EGP_TCP_OUT -p tcp --syn -j REDIRECT --to-ports 7892
+iptables -t mangle -N EGP_UDP_OUT
+iptables -t mangle -A EGP_UDP_OUT -m mark --mark 0x2000000/0x2000000 -j RETURN
+iptables -t mangle -A EGP_UDP_OUT -m mark --mark 0x1000000/0x1000000 -j RETURN
+iptables -t mangle -A EGP_UDP_OUT -m mark --mark 0x8000000/0x8000000 -j RETURN
+iptables -t mangle -A EGP_UDP_OUT -m conntrack --ctdir REPLY -j RETURN
+iptables -t mangle -A EGP_UDP_OUT -m addrtype --dst-type LOCAL -j RETURN
+iptables -t mangle -A EGP_UDP_OUT -d 0.0.0.0/8 -j RETURN
+iptables -t mangle -A EGP_UDP_OUT -d 8.8.8.8/32 -j RETURN
+iptables -t mangle -A EGP_UDP_OUT -d 10.0.0.0/8 -j RETURN
+iptables -t mangle -A EGP_UDP_OUT -d 100.64.0.0/10 -j RETURN
+iptables -t mangle -A EGP_UDP_OUT -d 127.0.0.0/8 -j RETURN
+iptables -t mangle -A EGP_UDP_OUT -d 169.254.0.0/16 -j RETURN
+iptables -t mangle -A EGP_UDP_OUT -d 172.16.0.0/12 -j RETURN
+iptables -t mangle -A EGP_UDP_OUT -d 192.168.0.0/16 -j RETURN
+iptables -t mangle -A EGP_UDP_OUT -d 224.0.0.0/4 -j RETURN
+iptables -t mangle -A EGP_UDP_OUT -d 240.0.0.0/4 -j RETURN
+iptables -t mangle -A EGP_UDP_OUT -m owner --gid-owner egp-direct -j RETURN
+iptables -t mangle -A EGP_UDP_OUT -p udp -m multiport --dports 123 -j RETURN
+iptables -t mangle -A EGP_UDP_OUT -p udp -m multiport --sports 51820 -j RETURN
+iptables -t mangle -A EGP_UDP_OUT -p udp -j MARK --set-xmark 0x4000000/0x4000000
+iptables -t mangle -N EGP_UDP_PRE
+iptables -t mangle -A EGP_UDP_PRE -i lo -p udp -m mark --mark 0x4000000/0x4000000 -j TPROXY --on-ip 127.0.0.1 --on-port 7893 --tproxy-mark 0x4000000/0x4000000
+iptables -t nat -I OUTPUT 1 -p tcp -m comment --comment egp -j EGP_TCP_OUT
+iptables -t mangle -I OUTPUT 1 -p udp -m comment --comment egp -j EGP_UDP_OUT
+iptables -t mangle -I PREROUTING 1 -i lo -p udp -m comment --comment egp -j EGP_UDP_PRE
+ip -4 rule add pref 9000 fwmark 0x4000000/0x4000000 lookup 7893
+ip -4 route replace local 0.0.0.0/0 dev lo table 7893

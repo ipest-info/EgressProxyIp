@@ -1,0 +1,14 @@
+[Unit]
+Description=egp 开机防泄露守护（kill switch 开启时，在网络就绪前先下发阻断规则）
+DefaultDependencies=no
+After=local-fs.target systemd-modules-load.service
+Before=network-pre.target egp.service
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/egp boot-guard -dir /etc/egp
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

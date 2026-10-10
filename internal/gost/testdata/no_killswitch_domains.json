@@ -1,0 +1,127 @@
+{
+  "services": [
+    {
+      "name": "egp-redir",
+      "addr": "127.0.0.1:7892",
+      "handler": {
+        "type": "red",
+        "chain": "egp-chain",
+        "metadata": {
+          "sniffing": true,
+          "sniffing.fallback": true,
+          "sniffing.timeout": "300ms"
+        }
+      },
+      "listener": {
+        "type": "red"
+      },
+      "metadata": {
+        "so_mark": "16777216"
+      }
+    },
+    {
+      "name": "egp-tproxy",
+      "addr": "127.0.0.1:7893",
+      "handler": {
+        "type": "redu",
+        "chain": "egp-chain"
+      },
+      "listener": {
+        "type": "redu",
+        "metadata": {
+          "ttl": "60s"
+        }
+      },
+      "metadata": {
+        "so_mark": "16777216"
+      }
+    }
+  ],
+  "chains": [
+    {
+      "name": "egp-chain",
+      "hops": [
+        {
+          "name": "egp-egress"
+        }
+      ]
+    }
+  ],
+  "hops": [
+    {
+      "name": "egp-egress",
+      "selector": {
+        "strategy": "fifo",
+        "maxFails": 3,
+        "failTimeout": "30s"
+      },
+      "bypass": "egp-direct-domains",
+      "nodes": [
+        {
+          "name": "px-a1",
+          "addr": "203.0.113.20:1080",
+          "connector": {
+            "type": "socks5",
+            "auth": {
+              "username": "u1",
+              "password": "p1"
+            },
+            "metadata": {
+              "relay": "udp"
+            }
+          },
+          "dialer": {
+            "type": "tcp"
+          },
+          "metadata": {
+            "so_mark": "33554432"
+          }
+        },
+        {
+          "name": "px-b2",
+          "addr": "proxy.example.net:1080",
+          "network": "tcp",
+          "connector": {
+            "type": "socks5",
+            "metadata": {
+              "relay": "udp"
+            }
+          },
+          "dialer": {
+            "type": "tcp"
+          },
+          "metadata": {
+            "so_mark": "33554432"
+          }
+        }
+      ]
+    }
+  ],
+  "bypasses": [
+    {
+      "name": "egp-direct-domains",
+      "matchers": [
+        "example.com",
+        ".example.com",
+        "aliyuncs.com",
+        ".aliyuncs.com"
+      ]
+    }
+  ],
+  "api": {
+    "addr": "127.0.0.1:17890",
+    "auth": {
+      "username": "egp",
+      "password": "secret"
+    }
+  },
+  "metrics": {
+    "addr": "127.0.0.1:17891",
+    "path": "/metrics"
+  },
+  "log": {
+    "level": "info",
+    "format": "text",
+    "output": "stderr"
+  }
+}
