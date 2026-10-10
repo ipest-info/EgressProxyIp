@@ -1,0 +1,94 @@
+# 构建并发布 GitHub Release。
+# 触发方式：推送 v* 标签，或在 Actions 页面手动运行（填写要发布的标签，标签不存在时会自动创建）。
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "要发布的版本标签，例如 v0.1.0"
+        required: true
+        default: "v0.1.0"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 检查标签格式
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || { echo "标签格式应为 vX.Y.Z：$TAG"; exit 1; }
+          if gh release view "$TAG" >/dev/null 2>&1; then echo "Release $TAG 已存在"; exit 1; fi
+
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.7"
+          cache: true
+
+      - name: 静态检查与单元测试
+        run: make test
+
+      - name: 构建发布包
+        run: ./scripts/build-release.sh "$TAG"
+
+      - name: 生成发布说明
+        run: |
+          cat > notes.md <<EOF
+          ## 一键安装 / 升级（Ubuntu，需要 root）
+
+          \`\`\`bash
+          curl -fsSL https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/install.sh | sudo bash
+          \`\`\`
+
+          - 安装指定版本：\`curl -fsSL https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/install.sh | sudo EGP_VERSION=${TAG} bash\`
+          - WebUI 对外监听（自动启用 HTTPS 自签证书，请在安全组中只放行自己的 IP）：在命令末尾加 \`-s -- --listen 0.0.0.0:8088\`
+          - 升级：重新执行安装命令，\`/etc/egp\` 下的配置会保留
+          - 卸载：\`sudo egp uninstall\`（加 \`--purge\` 同时删除配置）
+
+          安装完成后终端会打印 WebUI 地址和初始密码（也保存在 \`/etc/egp/initial-password\`）。
+
+          ## 离线安装
+
+          下载对应架构的 \`egp-linux-amd64.tar.gz\` 或 \`egp-linux-arm64.tar.gz\`，然后执行：
+
+          \`\`\`bash
+          sha256sum -c SHA256SUMS --ignore-missing
+          tar -xzf egp-linux-amd64.tar.gz && sudo ./egp/install.sh
+          \`\`\`
+
+          ## 内容
+
+          - egp ${TAG}
+          - gost 3.3.1（已通过端到端测试验证）
+
+          ## SHA256
+
+          \`\`\`
+          $(cat dist/SHA256SUMS)
+          \`\`\`
+          EOF
+          cat notes.md
+
+      - name: 发布 Release
+        run: |
+          gh release create "$TAG" dist/* \
+            --target "$GITHUB_SHA" \
+            --title "egp $TAG" \
+            --notes-file notes.md

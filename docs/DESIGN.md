@@ -226,7 +226,14 @@ egp 只需生成配置并在运行时调用 API。
 
 ## 8. 部署与运维
 
-一键安装：`sudo ./install.sh`，即 `egp install`。安装过程会：
+发布与安装：
+
+- **发布**：GitHub Actions 在推送 `v*` 标签或手动触发时，执行测试、构建 amd64/arm64 安装包（内含 egp、gost 3.3.1、install.sh），然后发布 Release，资产包括两个 tar 包、`install.sh` 和 `SHA256SUMS`；
+- **在线安装**：`curl -fsSL https://github.com/ipest-info/EgressProxyIp/releases/latest/download/install.sh | sudo bash`。脚本识别 CPU 架构，下载安装包并校验 SHA256，然后执行 `egp install`；
+  - 可用 `EGP_VERSION` 指定版本，用 `EGP_BASE_URL` 指定镜像或内网地址；
+  - 脚本与 egp 位于同一目录（解压后的离线安装包）时，直接从本地安装。
+
+`egp install` 的过程：
 
 - 安装依赖（apt）；
 - 复制 egp 和 gost（校验 gost 版本 ≥ 3.3.0）；

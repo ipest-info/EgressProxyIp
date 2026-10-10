@@ -15,22 +15,36 @@
 
 ### 1. 安装
 
-在 ECS 上执行（Ubuntu 20.04 / 22.04 / 24.04，需要 root）：
+在 ECS 上执行一条命令即可（Ubuntu 20.04 / 22.04 / 24.04，amd64 / arm64，需要 root）：
 
 ```bash
-tar -xzf egp-<版本>-linux-amd64.tar.gz
-cd egp
-sudo ./install.sh
+curl -fsSL https://github.com/ipest-info/EgressProxyIp/releases/latest/download/install.sh | sudo bash
 ```
 
-安装脚本会完成以下工作：
+脚本会从 [GitHub Release](https://github.com/ipest-info/EgressProxyIp/releases) 下载最新的安装包，然后依次完成：
 
-- 检查并安装依赖（`iptables`、`iproute2`）。
-- 安装 `egp` 和 `gost` 到 `/usr/local/bin`。gost 优先使用发布包自带的，没有时从 GitHub 下载，可用 `GOST_URL` 指定镜像。
-- 注册并启动 `egp.service` 和 `egp-guard.service`。
+- 校验 SHA256；
+- 自动安装依赖（`iptables`、`iproute2`、`curl`、`ca-certificates`）；
+- 把 `egp` 和经过验证的 `gost` 3.3.1 安装到 `/usr/local/bin`；
+- 注册并启动 `egp.service` 和 `egp-guard.service`；
 - 生成初始管理员密码，打印在终端，同时保存到 `/etc/egp/initial-password`。
 
-发布包由 `make release`（即 `scripts/build-release.sh`）生成，内含 egp、经过验证的 gost 3.3.1 和安装脚本。
+常用变体：
+
+| 场景 | 命令 |
+|---|---|
+| 安装指定版本 | `curl -fsSL https://github.com/ipest-info/EgressProxyIp/releases/latest/download/install.sh \| sudo EGP_VERSION=v0.1.0 bash` |
+| WebUI 对外监听 | `curl -fsSL …/install.sh \| sudo bash -s -- --listen 0.0.0.0:8088` |
+| 升级 | 重新执行安装命令，`/etc/egp` 下的配置和密码保留 |
+| 卸载 | `sudo egp uninstall`（加 `--purge` 同时删除配置） |
+| 访问 GitHub 慢 | 把 Release 资产放到镜像或内网地址，再执行 `curl -fsSL <镜像>/install.sh \| sudo EGP_BASE_URL=<镜像目录> bash`，目录下需要有 `egp-linux-<架构>.tar.gz` 和 `SHA256SUMS` |
+
+**离线安装**：从 Release 页面下载 `egp-linux-amd64.tar.gz`（或 arm64 版）和 `SHA256SUMS`，上传到服务器后执行：
+
+```bash
+sha256sum -c SHA256SUMS --ignore-missing
+tar -xzf egp-linux-amd64.tar.gz && sudo ./egp/install.sh
+```
 
 ### 2. 打开 WebUI
 
@@ -42,7 +56,7 @@ ssh -L 8088:127.0.0.1:8088 root@<ECS 公网 IP>
 
 然后打开 <http://127.0.0.1:8088>，用初始密码登录。
 
-如果想直接从公网访问，用 `sudo ./install.sh --listen 0.0.0.0:8088` 安装，此时会自动启用 HTTPS（自签证书）。请务必在阿里云安全组中**只放行你自己的 IP**。
+如果想直接从公网访问，安装时加上 `--listen 0.0.0.0:8088`（见上表），此时会自动启用 HTTPS（自签证书）。请务必在阿里云安全组中**只放行你自己的 IP**。
 
 ### 3. 配置并启用
 
@@ -103,7 +117,22 @@ curl ifconfig.me
 make test        # gofmt、go vet、单元测试
 make demo        # 演示模式启动 WebUI（不启动 gost、不修改防火墙），默认 http://127.0.0.1:8088
 sudo make e2e    # 端到端测试：在独立网络命名空间中用真实 gost + iptables 验证
-make release     # 构建发布包（amd64 / arm64）
+make release     # 在本地构建发布产物到 dist/（amd64 / arm64）
 ```
 
 运行端到端测试需要 root、`iproute2`、`curl` 和 gost（用 `EGP_GOST_BIN` 指定路径）。测试在 `unshare -n` 创建的独立网络命名空间中进行，不会修改宿主机防火墙。
+
+## 发布新版本
+
+发布由 GitHub Actions（`.github/workflows/release.yml`）完成。依次执行单元测试、构建 amd64/arm64 安装包，然后创建 Release 并上传以下资产：
+
+- `egp-linux-amd64.tar.gz`、`egp-linux-arm64.tar.gz`
+- `install.sh`
+- `SHA256SUMS`
+
+触发方式任选其一：
+
+- 推送版本标签：`git tag v0.2.0 && git push origin v0.2.0`；
+- 在 GitHub 的 Actions 页面选择 **release** 工作流，点击 **Run workflow** 并填写标签（标签不存在时会自动创建）。
+
+资产文件名不带版本号，因此 `releases/latest/download/install.sh` 始终指向最新版。
